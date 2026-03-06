@@ -1,0 +1,26 @@
+# Workspace automation helpers.
+
+# Render the execution DAG from the app config.
+rcfg:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  APP_DIR="${APP_DIR:-cu_example_app}"
+  ../../target/debug/cu29-rendercfg apps/"${APP_DIR}"/copperconfig.ron --open
+
+# Extract the structured log via the log reader.
+log:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  APP_DIR="${APP_DIR:-cu_example_app}"
+  APP_NAME="${APP_NAME:-${APP_DIR}}"
+  RUST_BACKTRACE=1 cargo run -p "${APP_NAME}" --features=logreader --bin "${APP_NAME}-logreader" \
+    apps/"${APP_DIR}"/logs/"${APP_NAME}".copper extract-text-log target/debug/cu29_log_index
+
+# Extract CopperLists from the log output.
+cl:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  APP_DIR="${APP_DIR:-cu_example_app}"
+  APP_NAME="${APP_NAME:-${APP_DIR}}"
+  RUST_BACKTRACE=1 cargo run -p "${APP_NAME}" --features=logreader --bin "${APP_NAME}-logreader" \
+    apps/"${APP_DIR}"/logs/"${APP_NAME}".copper extract-copperlists

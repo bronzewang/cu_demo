@@ -1,0 +1,13 @@
+[workspace]
+members = [
+    "apps/cu_example_app",
+    "components/bridges/cu_example_shared_bridge",
+]
+resolver = "2"
+
+[workspace.dependencies]
+cu29 = {  git = "https://github.com/copper-project/copper-rs.git"  }
+cu29-helpers = {  git = "https://github.com/copper-project/copper-rs.git"  }
+cu29-export = {  git = "https://github.com/copper-project/copper-rs.git"  }
+bincode = { package = "cu-bincode", version = "2.0", default-features = false, features = ["derive", "alloc"] }
+serde = { version = "*", features = ["derive"] }
