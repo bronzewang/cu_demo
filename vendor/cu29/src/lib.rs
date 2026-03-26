@@ -1,0 +1,246 @@
+//! # Copper Runtime & SDK
+//!
+//! Think of Copper as a robotics game engine: define a task graph, compile once,
+//! and get deterministic execution, unified logging, and sub-microsecond
+//! latency from Linux workstations all the way down to bare-metal MPU builds.
+//!
+//! ## Quick start
+//!
+//! ```bash
+//! cargo install cargo-generate
+//! git clone https://github.com/copper-project/copper-rs
+//! cd copper-rs/templates
+//! cargo cunew /path/to/my_robot   # scaffolds a full Copper project
+//! ```
+//!
+//! It will generate a minimal Copper robot project at `/path/to/my_robot`. `cargo build` should
+//! compile it out of the box.
+//!
+//! ## Feature flags
+//!
+//! - `default` = `["std", "signal-handler", "textlogs", "units"]`
+//! - `units`: exposes `cu29::units` (re-export of `cu29-units`)
+//! - `std`: host/runtime support that is also safe to compile for browser targets
+//! - `signal-handler`: desktop Ctrl-C integration for generated `run()` loops
+//! - `reflect`: reflection support for runtime and units types
+//! - `textlogs`: text logging derive support
+//! - `remote-debug`: remote debug transport support
+//! - `sysclock-perf`: use a host/system clock for runtime perf timing while keeping robot time for `tov`
+//! - `async-cl-io`: offload CopperList serialization/logging to a dedicated std thread
+//! - `parallel-rt`: prepare the runtime for a future multi-threaded deterministic executor
+//!
+//! ## Concepts behind Copper
+//!
+//! Check out the [Copper Wiki](https://github.com/copper-project/copper-rs/wiki) to understand the
+//! deployments concepts, task lifecycle, available components, etc ...
+//!
+//! ## More examples to get you started
+//!
+//! - `examples/cu_caterpillar`: a minimal running example passing around booleans.
+//! - `examples/cu_rp_balancebot`: a more complete example try Copper without hardware via
+//!   `cargo install cu-rp-balancebot` + `balancebot-sim` (Bevy + Avian3d).
+//!
+//! ## Key traits and structs to check out
+//!
+//! - `cu29_runtime::app::CuApp`: the main trait the copper runtime will expose to run your application. (when run() etc .. is coming from)
+//! - `cu29_runtime::config::CuConfig`: the configuration of your runtime
+//! - `cu29_runtime::cutask::CuTask`: the core trait and helpers to implement your own tasks.
+//! - `cu29_runtime::cubridge::CuBridge`: the trait to implement bridges to hardware or other software.
+//! - `cu29_runtime::curuntime::CuRuntime`: the runtime that manages task execution.
+//! - `cu29_runtime::simulation`: This will explain how to hook up your tasks to a simulation environment.
+//!
+//! Need help or want to show what you're building? Join
+//! [Discord](https://discord.gg/VkCG7Sb9Kw) and hop into the #general channel.
+//!
+
+#![cfg_attr(not(feature = "std"), no_std)]
+#[cfg(all(feature = "parallel-rt", not(feature = "std")))]
+compile_error!("feature `parallel-rt` requires `std`");
+#[cfg(not(feature = "std"))]
+extern crate alloc;
+
+pub use cu29_derive::{bundle_resources, resources};
+pub use cu29_runtime::config;
+pub use cu29_runtime::context;
+pub use cu29_runtime::copperlist;
+#[cfg(feature = "std")]
+pub use cu29_runtime::cuasynctask;
+pub use cu29_runtime::cubridge;
+pub use cu29_runtime::curuntime;
+pub use cu29_runtime::cutask;
+#[cfg(feature = "std")]
+pub use cu29_runtime::debug;
+pub use cu29_runtime::input_msg;
+pub use cu29_runtime::monitoring;
+pub use cu29_runtime::output_msg;
+#[cfg(all(feature = "std", feature = "parallel-rt"))]
+pub use cu29_runtime::parallel_queue;
+#[cfg(all(feature = "std", feature = "parallel-rt"))]
+pub use cu29_runtime::parallel_rt;
+pub use cu29_runtime::payload;
+pub use cu29_runtime::reflect;
+pub use cu29_runtime::reflect as bevy_reflect;
+#[cfg(feature = "remote-debug")]
+pub use cu29_runtime::remote_debug;
+pub use cu29_runtime::resource;
+pub use cu29_runtime::rx_channels;
+#[cfg(feature = "std")]
+pub use cu29_runtime::simulation;
+pub use cu29_runtime::tx_channels;
+
+#[cfg(feature = "rtsan")]
+pub mod rtsan {
+    pub use rtsan_standalone::*;
+}
+
+#[cfg(not(feature = "rtsan"))]
+pub mod rtsan {
+    use core::ffi::CStr;
+
+    #[derive(Default)]
+    pub struct ScopedSanitizeRealtime;
+
+    #[derive(Default)]
+    pub struct ScopedDisabler;
+
+    #[inline]
+    pub fn realtime_enter() {}
+
+    #[inline]
+    pub fn realtime_exit() {}
+
+    #[inline]
+    pub fn disable() {}
+
+    #[inline]
+    pub fn enable() {}
+
+    #[inline]
+    pub fn ensure_initialized() {}
+
+    #[allow(unused_variables)]
+    pub fn notify_blocking_call(_function_name: &'static CStr) {}
+}
+
+pub use bincode;
+pub use cu29_clock as clock;
+#[cfg(feature = "units")]
+pub use cu29_units as units;
+#[cfg(feature = "defmt")]
+pub mod defmt {
+    pub use defmt::{debug, error, info, warn};
+}
+#[cfg(feature = "std")]
+pub use cu29_runtime::config::read_configuration;
+pub use cu29_traits::*;
+
+#[cfg(feature = "std")]
+pub use rayon;
+
+// defmt shims re-exported for proc-macro call sites
+#[cfg(all(feature = "defmt", not(feature = "std")))]
+#[macro_export]
+macro_rules! defmt_debug {
+    ($fmt:literal $(, $arg:expr)* $(,)?) => {
+        $crate::defmt::debug!($fmt $(, $arg)*);
+    }
+}
+#[cfg(not(all(feature = "defmt", not(feature = "std"))))]
+#[macro_export]
+macro_rules! defmt_debug {
+    ($($tt:tt)*) => {{}};
+}
+
+#[cfg(all(feature = "defmt", not(feature = "std")))]
+#[macro_export]
+macro_rules! defmt_info {
+    ($fmt:literal $(, $arg:expr)* $(,)?) => {
+        $crate::defmt::info!($fmt $(, $arg)*);
+    }
+}
+#[cfg(not(all(feature = "defmt", not(feature = "std"))))]
+#[macro_export]
+macro_rules! defmt_info {
+    ($($tt:tt)*) => {{}};
+}
+
+#[cfg(all(feature = "defmt", not(feature = "std")))]
+#[macro_export]
+macro_rules! defmt_warn {
+    ($fmt:literal $(, $arg:expr)* $(,)?) => {
+        $crate::defmt::warn!($fmt $(, $arg)*);
+    }
+}
+#[cfg(not(all(feature = "defmt", not(feature = "std"))))]
+#[macro_export]
+macro_rules! defmt_warn {
+    ($($tt:tt)*) => {{}};
+}
+
+#[cfg(all(feature = "defmt", not(feature = "std")))]
+#[macro_export]
+macro_rules! defmt_error {
+    ($fmt:literal $(, $arg:expr)* $(,)?) => {
+        $crate::defmt::error!($fmt $(, $arg)*);
+    }
+}
+#[cfg(not(all(feature = "defmt", not(feature = "std"))))]
+#[macro_export]
+macro_rules! defmt_error {
+    ($($tt:tt)*) => {{}};
+}
+
+pub mod prelude {
+    pub use crate::bevy_reflect;
+    #[cfg(feature = "units")]
+    pub use crate::units;
+    pub use crate::{defmt_debug, defmt_error, defmt_info, defmt_warn};
+    #[cfg(feature = "signal-handler")]
+    pub use ctrlc;
+    pub use cu29_clock::*;
+    pub use cu29_derive::*; // includes resources! proc macro
+    pub use cu29_log::*;
+    pub use cu29_log::{
+        __cu29_defmt_debug, __cu29_defmt_error, __cu29_defmt_info, __cu29_defmt_warn,
+    };
+    pub use cu29_log_derive::*;
+    pub use cu29_log_runtime::*;
+    pub use cu29_runtime::app::*;
+    pub use cu29_runtime::config::*;
+    pub use cu29_runtime::context::*;
+    pub use cu29_runtime::copperlist::*;
+    pub use cu29_runtime::cubridge::*;
+    pub use cu29_runtime::curuntime::*;
+    pub use cu29_runtime::cutask::*;
+    #[cfg(feature = "std")]
+    pub use cu29_runtime::debug::*;
+    pub use cu29_runtime::input_msg;
+    pub use cu29_runtime::monitoring::*;
+    pub use cu29_runtime::output_msg;
+    pub use cu29_runtime::payload::*;
+    #[cfg(feature = "reflect")]
+    pub use cu29_runtime::reflect::serde as reflect_serde;
+    #[cfg(feature = "reflect")]
+    pub use cu29_runtime::reflect::serde::{
+        ReflectSerializer, SerializationData, TypedReflectSerializer,
+    };
+    pub use cu29_runtime::reflect::{
+        GetTypeRegistration, Reflect, ReflectTaskIntrospection, ReflectTypePath, TypeInfo,
+        TypePath, TypeRegistry, dump_type_registry_schema,
+    };
+    #[cfg(feature = "remote-debug")]
+    pub use cu29_runtime::remote_debug::*;
+    pub use cu29_runtime::resource::*;
+    pub use cu29_runtime::rx_channels;
+    #[cfg(feature = "std")]
+    pub use cu29_runtime::simulation::*;
+    pub use cu29_runtime::tx_channels;
+    pub use cu29_runtime::*;
+    pub use cu29_traits::*;
+    pub use cu29_unifiedlog::*;
+    pub use cu29_value::Value;
+    pub use cu29_value::to_value;
+    #[cfg(feature = "std")]
+    pub use pool::*;
+    pub use serde::Serialize;
+}
